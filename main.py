@@ -27,13 +27,15 @@ class HistoricalWeatherProvider:
 
 class OWMHistoricalWeatherClient(HistoricalWeatherProvider):
 
-    def __init__(self, city_name, start, end):
+    def __init__(self, city_name, end):
         self.city = city_name
-        self.temperature_of_city = {}
-        self.start_date = start
         self.end_date = end
 
     def getHistoricalWeatherForFiveDaysForCity(self):
+
+        data_to_export = {}
+
+        user_end_date = calendar.timegm(time.strptime(self.end_date, '%d.%m.%Y'))
 
         for every_city in self.city:
             url = API_URL + every_city +"&units=metric" + API_ID
@@ -42,21 +44,38 @@ class OWMHistoricalWeatherClient(HistoricalWeatherProvider):
 
             if HttpCodes.ok == response.status_code:
                 json_string = response.json()
-                self.temperature_of_city.update({every_city: {'Temperature': {json_string['list'][0]['main']['temp']}, 'Date': {json_string['list'][0]['dt']},
-                                                              'temp_max': {json_string['list'][0]['main']['temp_max']}, "temp_min": {json_string['list'][0]['main']['temp_min']}}})
+                list_length = len(json_string['list'])
+                weather_list = []
+                temp_max_list = []
+                temp_min_list = []
+                for every_date in range(list_length):
+
+                    if(user_end_date >= json_string['list'][every_date]['dt']):
+                        weather_list.append(json_string['list'][every_date]['main']['temp'])
+                        temp_max_list.append(json_string['list'][every_date]['main']['temp_max'])
+                        temp_min_list.append(json_string['list'][every_date]['main']['temp_min'])
+                        end_date = json_string['list'][every_date]['dt_txt']
+                        start_date = json_string['list'][0]['dt_txt']
                 print("Sucessfully downloaded temperature from service")
+
             else:
                 print(response.status_code)
                 return None
 
-        print('Json from web: \n',self.temperature_of_city)
-        return self.temperature_of_city
+            data_to_export.update({every_city: {'Average temperature': sum(weather_list)/list_length,
+                                                'Temp_max': max(temp_max_list),
+                                                'Temp_min': min(temp_min_list),
+                                                'End date': end_date,
+                                                'Start date': start_date}})
+        print("Data to export: \n", data_to_export)
+        return data_to_export
 
 class XlsxHistoricalWeatherReader(HistoricalWeatherProvider):
 
     def __init__(self, city_name, start, end):
         self.city = city_name
-        self.temperature_of_city = []
+        self.start_dat = start
+        self.end_date = end
         self.city_list = []
         self.date_list = []
         self.temperature = []
@@ -64,13 +83,6 @@ class XlsxHistoricalWeatherReader(HistoricalWeatherProvider):
     def getHistoricalWeatherForCity(self):
         wb = load_workbook('temperature.xlsx')
         ws = wb.active
-
-        for col in ws.iter_cols(min_row=1, max_col=10, max_row=10):
-            for cell in col:
-                if (cell.value is not None):
-                    self.temperature_of_city.append(cell.value)
-                else:
-                     break
 
         for row in ws.iter_rows(min_row=2, max_col=1, max_row=10):
             for cell in row:
@@ -86,8 +98,25 @@ class XlsxHistoricalWeatherReader(HistoricalWeatherProvider):
                 else:
                     break
 
-        print('List from excel: \n', self.temperature_of_city)
-        return self.temperature_of_city
+        start_column = 2
+        weather_list = []
+        data_to_export = {}
+        for city in self.city_list:
+            for row in ws.iter_rows(min_row=2, min_col=start_column, max_col = start_column, max_row=10):
+                for cell in row:
+                    if (cell.value is not None):
+                        weather_list.append(cell.value)
+                    else:
+                        break
+            start_column += 1
+            data_to_export.update({city: {'Average temperature': sum(weather_list)/len(weather_list),
+                                            'Temp_max': max(weather_list),
+                                            'Temp_min': min(weather_list),
+                                            'End date': self.date_list[-1],
+                                            'Start date': self.date_list[0]}})
+            weather_list.clear()
+        print("Data to export from excel: \n", data_to_export)
+        return data_to_export
 
 
 class DocxHistoricalWeatherReporter:
@@ -105,28 +134,11 @@ class DocxHistoricalWeatherReporter:
                 document.add_heading(every_city, level=1)
                 table = document.add_table(rows=2, cols=5)
 
-                temperature_of_city = weather_data[every_city]['Temperature']
-                date = weather_data[every_city]['Date']
-                temp_max = weather_data[every_city]['temp_max']
-                temp_min = weather_data[every_city]['temp_min']
-
-                for time in date:
-                    date_to_int = time
-                    break
-                date_of_weather = datetime.datetime.fromtimestamp(date_to_int)
-
-                for temperature in temperature_of_city:
-                    temperature_to_string = temperature
-                    break
-
-                for temp in temp_max:
-                    temperature_max_to_string = temp
-                    break
-
-                for temp in temp_min:
-                    temperature_min_to_string = temp
-                    break
-
+                temperature_of_city = weather_data[every_city]['Average temperature']
+                end_date = weather_data[every_city]['End date']
+                start_date = weather_data[every_city]['Start date']
+                temp_max = weather_data[every_city]['Temp_max']
+                temp_min = weather_data[every_city]['Temp_min']
 
                 hdr_cells = table.rows[0].cells
                 hdr_cells[0].text = 'From'
@@ -136,11 +148,11 @@ class DocxHistoricalWeatherReporter:
                 hdr_cells[4].text = 'Min'
 
                 hdr_data = table.rows[1].cells
-                hdr_data[0].text = str(date_of_weather)
-                hdr_data[1].text = "do"
-                hdr_data[2].text = str(temperature_to_string)
-                hdr_data[3].text = str(temperature_max_to_string)
-                hdr_data[4].text = str(temperature_min_to_string)
+                hdr_data[0].text = str(start_date)
+                hdr_data[1].text = str(end_date)
+                hdr_data[2].text = str(round(temperature_of_city))
+                hdr_data[3].text = str(temp_max)
+                hdr_data[4].text = str(temp_min)
         else:
             print("Couldn't download temperature from service")
             return None
@@ -149,58 +161,23 @@ class DocxHistoricalWeatherReporter:
 
         document.save(self.report_path)
 
-        print("Word raport successfully generated from Web Service")
-
-    def generateReportFromExcel(self, city_list, date_list):
-            document = Document()
-
-            document.add_heading('Temperature Report', 0)
-
-            if city_list is not None:
-                for every_city in city_list:
-                    document.add_heading(every_city, level=1)
-                    table = document.add_table(rows=2, cols=5)
-
-                    hdr_cells = table.rows[0].cells
-                    hdr_cells[0].text = 'From'
-                    hdr_cells[1].text = 'To'
-                    hdr_cells[2].text = 'Average'
-                    hdr_cells[3].text = 'Max'
-                    hdr_cells[4].text = 'Min'
-
-                    hdr_data = table.rows[1].cells
-                    hdr_data[0].text = date_list[0]
-                    hdr_data[1].text = date_list[-1]
-                    #hdr_data[2].text = str(temperature_of_city)
-                    #hdr_data[3].text = "Max"
-                    #hdr_data[4].text = "Min"
-            else:
-                print("Couldn't parse data from Excel")
-                return None
-
-            document.add_page_break()
-
-            document.save(self.report_path)
-
-            print("Word raport successfully generated from Excel")
-
+        print("Word raport successfully generated from Web Service and Excel")
 
 def main():
 
     city_list = []
 
-    weather_from_internet = OWMHistoricalWeatherClient({"Wroclaw", "Berlin"}, "01.12.2016", "20.12.2016")
+    weather_from_internet = OWMHistoricalWeatherClient({"Wroclaw", "Berlin"}, "23.03.2017")
     temperature_of_cities = weather_from_internet.getHistoricalWeatherForFiveDaysForCity()
-    print(temperature_of_cities)
 
     docx = DocxHistoricalWeatherReporter("C:/Users/krzacjan/Desktop/pythonHomeWork/temperature_report_from_web.docx")
     docx.generateReportFromWeb(temperature_of_cities)
 
-    weather_from_excel =  XlsxHistoricalWeatherReader({"Wroclaw", "Berlin"}, "01.12.2016", "20.12.2016")
+    weather_from_excel =  XlsxHistoricalWeatherReader({"Wroclaw", "Berlin"}, "01.12.2016", "05.12.2016")
     temperature_of_cities_from_excel = weather_from_excel.getHistoricalWeatherForCity()
 
     docx = DocxHistoricalWeatherReporter("C:/Users/krzacjan/Desktop/pythonHomeWork/temperature_report_from_excel.docx")
-    docx.generateReportFromExcel(weather_from_excel.city_list, weather_from_excel.date_list)
+    docx.generateReportFromWeb(temperature_of_cities_from_excel)
 
 if __name__ == "__main__":
     main()
