@@ -1,4 +1,5 @@
-
+from PySide import QtGui
+import sys
 import requests
 import calendar
 import time
@@ -70,55 +71,6 @@ class OWMHistoricalWeatherClient(HistoricalWeatherProvider):
         print("Data to export: \n", data_to_export)
         return data_to_export
 
-class XlsxHistoricalWeatherReader(HistoricalWeatherProvider):
-
-    def __init__(self, city_name, start, end):
-        self.city = city_name
-        self.start_dat = start
-        self.end_date = end
-        self.city_list = []
-        self.date_list = []
-        self.temperature = []
-
-    def getHistoricalWeatherForCity(self):
-        wb = load_workbook('temperature.xlsx')
-        ws = wb.active
-
-        for row in ws.iter_rows(min_row=2, max_col=1, max_row=10):
-            for cell in row:
-                if (cell.value is not None):
-                    self.date_list.append(cell.value)
-                else:
-                    break
-
-        for row in ws.iter_rows(max_row=1, min_col=2, max_col=10):
-            for cell in row:
-                if (cell.value is not None):
-                    self.city_list.append(cell.value)
-                else:
-                    break
-
-        start_column = 2
-        weather_list = []
-        data_to_export = {}
-        for city in self.city_list:
-            for row in ws.iter_rows(min_row=2, min_col=start_column, max_col = start_column, max_row=10):
-                for cell in row:
-                    if (cell.value is not None):
-                        weather_list.append(cell.value)
-                    else:
-                        break
-            start_column += 1
-            data_to_export.update({city: {'Average temperature': sum(weather_list)/len(weather_list),
-                                            'Temp_max': max(weather_list),
-                                            'Temp_min': min(weather_list),
-                                            'End date': self.date_list[-1],
-                                            'Start date': self.date_list[0]}})
-            weather_list.clear()
-        print("Data to export from excel: \n", data_to_export)
-        return data_to_export
-
-
 class DocxHistoricalWeatherReporter:
 
     def __init__(self, report_source):
@@ -163,22 +115,77 @@ class DocxHistoricalWeatherReporter:
 
         print("Word raport successfully generated from Web Service and Excel")
 
+
+
+class Example(QtGui.QWidget):
+
+    def __init__(self):
+        super(Example, self).__init__()
+
+        self.initUI()
+
+        self.cityListToExport = []
+
+    def initUI(self):
+
+        self.st = QtGui.QLabel("Miasto:")
+
+        self.textBox = QtGui.QTextEdit(self)
+        self.textBox.setMaximumSize(150,30)
+
+        self.buttonAddCity = QtGui.QPushButton('Add City', self)
+
+        self.cityList = QtGui.QListWidget(self)
+        self.cityList.readOnly = True
+
+        self.buttonGetFromWeb = QtGui.QPushButton('Get Temperature From Web', self)
+
+        #self.resize(500, 600)
+        self.center()
+        self.setWindowTitle('Center')
+
+        layout = QtGui.QVBoxLayout()
+        layout.addWidget(self.st)
+        layout.addWidget(self.textBox)
+        layout.addWidget(self.buttonAddCity)
+        layout.addWidget(self.cityList)
+        layout.addWidget(self.buttonGetFromWeb)
+
+        self.setLayout(layout)
+
+        self.buttonAddCity.clicked.connect(self.btnstateForCityButton)
+        self.buttonGetFromWeb.clicked.connect(self.btnstateForWebService)
+
+    def btnstateForCityButton(self):
+        if self.buttonAddCity.isChecked():
+            print("button pressed")
+        else:
+            city = self.textBox.toPlainText()
+            self.cityList.addItem(city)
+            self.cityListToExport.append(city)
+            self.textBox.clear()
+
+    def btnstateForWebService(self):
+        if self.buttonGetFromWeb.isChecked():
+            print("button pressed")
+        else:
+            weather_from_internet = OWMHistoricalWeatherClient(self.cityListToExport, "23.03.2017")
+            temperature_of_cities = weather_from_internet.getHistoricalWeatherForFiveDaysForCity()
+
+            docx = DocxHistoricalWeatherReporter("C:/Users/krzacjan/Desktop/pythonHomeWork/temperature_report_from_web.docx")
+            docx.generateReportFromWeb(temperature_of_cities)
+
+    def center(self):
+        qr = self.frameGeometry()
+        cp = QtGui.QDesktopWidget().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
+
 def main():
+    app = QtGui.QApplication(sys.argv)
+    ex = Example()
+    ex.show()
+    sys.exit(app.exec_())
 
-    weather_from_internet = OWMHistoricalWeatherClient({"Wroclaw", "Berlin"}, "23.03.2017")
-    temperature_of_cities = weather_from_internet.getHistoricalWeatherForFiveDaysForCity()
-
-    docx = DocxHistoricalWeatherReporter("C:/Users/krzacjan/Desktop/pythonHomeWork/temperature_report_from_web.docx")
-    docx.generateReportFromWeb(temperature_of_cities)
-
-    weather_from_excel =  XlsxHistoricalWeatherReader({"Wroclaw", "Berlin"}, "01.12.2016", "05.12.2016")
-    temperature_of_cities_from_excel = weather_from_excel.getHistoricalWeatherForCity()
-
-    docx = DocxHistoricalWeatherReporter("C:/Users/krzacjan/Desktop/pythonHomeWork/temperature_report_from_excel.docx")
-    docx.generateReportFromWeb(temperature_of_cities_from_excel)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-
-
-
